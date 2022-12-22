@@ -1,0 +1,16 @@
+[default]
+region = eu-west-1
+aws_access_key_id=AAAAAAAAAAAAAAAAAAAA
+aws_secret_access_key=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+[profile test1]
+region = eu-west-2
+aws_access_key_id=AAAAAAAAAAAAAAAAAAAA
+aws_secret_access_key=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+[profile test2]
+region = eu-west-1
+sso_account_id = 123456789
+sso_region = eu-west-1
+sso_role_name = AdministratorAccess
+sso_start_url = https://d-999999999.awsapps.com/start
