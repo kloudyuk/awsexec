@@ -35,6 +35,12 @@ func test(ctx context.Context, profile string, cfg aws.Config) (interface{}, err
 	return testResult{profile, cfg.Region}, nil
 }
 
+func testSlice(ctx context.Context, profile string, cfg aws.Config) (interface{}, error) {
+	return []testResult{
+		{profile, cfg.Region},
+	}, nil
+}
+
 func TestExec(t *testing.T) {
 	assert := assert.New(t)
 	testConfigPath := filepath.Join("internal", "testdata", "config")
@@ -48,19 +54,20 @@ func TestExec(t *testing.T) {
 		{"profile_filter", &Options{ConfigPath: testConfigPath, ProfileFilter: "^test1$"}, 6},
 		{"region_filter", &Options{ConfigPath: testConfigPath, RegionFilter: "eu"}, 9},
 		{"profile_region_filter", &Options{ConfigPath: testConfigPath, ProfileFilter: `\d`, RegionFilter: "^us-.*$"}, 4},
+		{"filter_without_matches", &Options{ConfigPath: testConfigPath, ProfileFilter: "unkown", RegionFilter: "^us-.*$"}, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := Exec(test, tt.options, svc)
-			assert.NoError(err)
-			assert.Len(res, tt.len)
-			for _, r := range results {
-				result, ok := r.(testResult)
-				assert.True(ok)
-				assert.NotZero(result.profile)
-				assert.NotZero(result.region)
+			for _, fn := range []ExecFunc{test, testSlice} {
+				results := []testResult{}
+				err := Exec(&results, fn, tt.options, svc)
+				assert.NoError(err)
+				assert.Len(results, tt.len)
+				for _, r := range results {
+					assert.NotZero(r.profile)
+					assert.NotZero(r.region)
+				}
 			}
-			results = nil
 		})
 	}
 }

@@ -3,6 +3,7 @@ package awsexec
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sync"
 	"time"
 
@@ -16,7 +17,7 @@ var errorc = make(chan error)
 var errors ExecErrors
 var execFunc ExecFunc
 var execOptions *Options
-var results []interface{}
+var results reflect.Value
 var resultsMutex sync.Mutex
 var wg sync.WaitGroup
 
@@ -38,12 +39,13 @@ func (ee ExecErrors) Error() string {
 	return err
 }
 
-func Exec(fn ExecFunc, opt *Options, svc internal.EC2Client) ([]interface{}, error) {
+func Exec(res interface{}, fn ExecFunc, opt *Options, svc ...internal.EC2Client) error {
+	results = reflect.ValueOf(res).Elem()
 	execFunc = fn
 	execOptions = opt
 	profiles, err := internal.GetProfiles(opt.ConfigPath, opt.ProfileFilter)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	go func() {
 		for {
@@ -53,16 +55,16 @@ func Exec(fn ExecFunc, opt *Options, svc internal.EC2Client) ([]interface{}, err
 	}()
 	for _, profile := range profiles {
 		wg.Add(1)
-		go execProfile(profile, svc)
+		go execProfile(profile, svc...)
 	}
 	wg.Wait()
 	if len(errors) == 0 {
-		return results, nil
+		return nil
 	}
-	return results, errors
+	return errors
 }
 
-func execProfile(profile string, svc internal.EC2Client) {
+func execProfile(profile string, svc ...internal.EC2Client) {
 	defer wg.Done()
 	cfg, err := config.LoadDefaultConfig(context.Background(), config.WithSharedConfigProfile(profile))
 	if err != nil {
@@ -70,10 +72,13 @@ func execProfile(profile string, svc internal.EC2Client) {
 		return
 	}
 	cfg.Region = "us-east-1"
-	if svc == nil {
-		svc = ec2.NewFromConfig(cfg)
+	var s internal.EC2Client
+	if len(svc) > 0 {
+		s = svc[0]
+	} else {
+		s = ec2.NewFromConfig(cfg)
 	}
-	regions, err := internal.GetRegions(execOptions.RegionFilter, svc)
+	regions, err := internal.GetRegions(execOptions.RegionFilter, s)
 	if err != nil {
 		errorc <- fmt.Errorf("error getting regions for profile %s: %w", profile, err)
 		return
@@ -97,7 +102,12 @@ func execRegion(profile string, cfg aws.Config) {
 	if r == nil {
 		return
 	}
+	v := reflect.ValueOf(r)
 	resultsMutex.Lock()
 	defer resultsMutex.Unlock()
-	results = append(results, r)
+	if v.Kind().String() == "slice" {
+		results.Set(reflect.AppendSlice(results, v))
+	} else {
+		results.Set(reflect.Append(results, v))
+	}
 }
