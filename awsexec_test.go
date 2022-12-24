@@ -2,72 +2,91 @@ package awsexec
 
 import (
 	"context"
-	"path/filepath"
+	"fmt"
 	"testing"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/stretchr/testify/assert"
 )
-
-type mockEC2Client struct{}
 
 type testResult struct {
 	profile string
 	region  string
 }
 
-func (m *mockEC2Client) DescribeRegions(ctx context.Context, params *ec2.DescribeRegionsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeRegionsOutput, error) {
-	return &ec2.DescribeRegionsOutput{
-		Regions: []types.Region{
-			{RegionName: aws.String("eu-west-1")},
-			{RegionName: aws.String("eu-west-2")},
-			{RegionName: aws.String("eu-west-3")},
-			{RegionName: aws.String("us-east-1")},
-			{RegionName: aws.String("us-east-2")},
-			{RegionName: aws.String("ap-northeast-1")},
-		},
-	}, nil
-}
-
-func test(ctx context.Context, profile string, cfg aws.Config) (interface{}, error) {
-	return testResult{profile, cfg.Region}, nil
-}
-
-func testSlice(ctx context.Context, profile string, cfg aws.Config) (interface{}, error) {
-	return []testResult{
-		{profile, cfg.Region},
-	}, nil
-}
-
 func TestExec(t *testing.T) {
-	assert := assert.New(t)
-	testConfigPath := filepath.Join("internal", "testdata", "config")
-	svc := &mockEC2Client{}
 	tests := []struct {
-		name    string
-		options *Options
-		len     int
+		name     string
+		opt      *Options
+		fn       ExecFunc
+		expected []testResult
+		err      bool
 	}{
-		{"no_filter", &Options{ConfigPath: testConfigPath}, 18},
-		{"profile_filter", &Options{ConfigPath: testConfigPath, ProfileFilter: "^test1$"}, 6},
-		{"region_filter", &Options{ConfigPath: testConfigPath, RegionFilter: "eu"}, 9},
-		{"profile_region_filter", &Options{ConfigPath: testConfigPath, ProfileFilter: `\d`, RegionFilter: "^us-.*$"}, 4},
-		{"filter_without_matches", &Options{ConfigPath: testConfigPath, ProfileFilter: "unkown", RegionFilter: "^us-.*$"}, 0},
+		{
+			name: "test",
+			opt: &Options{
+				Profiles: []string{"one", "two", "three"},
+				Regions:  []string{"a", "b", "c", "d"},
+			},
+			fn:  test,
+			err: false,
+		},
+		{
+			name: "test_slice",
+			opt: &Options{
+				Profiles: []string{"one", "three"},
+				Regions:  []string{"d"},
+			},
+			fn:  testSlice,
+			err: false,
+		},
+		{
+			name: "test_error",
+			opt: &Options{
+				Profiles: []string{"one", "two", "three", "four"},
+				Regions:  []string{"a", "b", "c", "d"},
+			},
+			expected: []testResult{},
+			fn:       testErr,
+			err:      true,
+		},
 	}
 	for _, tt := range tests {
+		if tt.expected == nil {
+			tt.expected = expectedResults(t, tt.opt.Profiles, tt.opt.Regions)
+		}
 		t.Run(tt.name, func(t *testing.T) {
-			for _, fn := range []ExecFunc{test, testSlice} {
-				results := []testResult{}
-				err := Exec(&results, fn, tt.options, svc)
+			assert := assert.New(t)
+			results := []testResult{}
+			err := Exec(context.Background(), tt.opt, tt.fn, &results)
+			if tt.err {
+				assert.ErrorContains(err, "test error")
+			} else {
 				assert.NoError(err)
-				assert.Len(results, tt.len)
-				for _, r := range results {
-					assert.NotZero(r.profile)
-					assert.NotZero(r.region)
-				}
 			}
+			assert.ElementsMatch(tt.expected, results)
 		})
 	}
+}
+
+func test(ctx context.Context, profile, region string) (any, error) {
+	return testResult{profile, region}, nil
+}
+
+func testSlice(ctx context.Context, profile, region string) (any, error) {
+	return []testResult{{profile, region}}, nil
+}
+
+func testErr(ctx context.Context, profile, region string) (any, error) {
+	return nil, fmt.Errorf("test error")
+}
+
+func expectedResults(t *testing.T, profiles, regions []string) []testResult {
+	t.Helper()
+	out := []testResult{}
+	for _, profile := range profiles {
+		for _, region := range regions {
+			out = append(out, testResult{profile, region})
+		}
+	}
+	return out
 }

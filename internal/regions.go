@@ -3,26 +3,26 @@ package internal
 import (
 	"context"
 	"regexp"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 )
 
-type EC2Client interface {
-	DescribeRegions(ctx context.Context, params *ec2.DescribeRegionsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeRegionsOutput, error)
-}
-
-func GetRegions(filter string, svc EC2Client) ([]string, error) {
+func GetRegions(ctx context.Context, profile string, filter string) ([]string, error) {
 	re, err := regexp.Compile(filter)
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	out, err := svc.DescribeRegions(ctx, &ec2.DescribeRegionsInput{
-		AllRegions: aws.Bool(false), // exclude disabled regions
-	})
+	cfg, err := config.LoadDefaultConfig(context.Background(), config.WithSharedConfigProfile(profile), config.WithRegion("us-east-1"))
+	if err != nil {
+		return nil, err
+	}
+	client := ec2.NewFromConfig(cfg)
+	in := &ec2.DescribeRegionsInput{
+		AllRegions: aws.Bool(false),
+	}
+	out, err := client.DescribeRegions(ctx, in)
 	if err != nil {
 		return nil, err
 	}

@@ -1,14 +1,9 @@
 SHELL = /bin/bash
 
-.PHONY: mod test
+.PHONY: test cover
 
-mod:
-	go mod tidy
+test:
+	go test -coverprofile cover.out -race -v ./...
 
-cover.out:
-	go test -race -coverprofile cover.out -v ./...
-
-test: cover.out
-
-cover: cover.out
-	go tool cover -html=cover.out
+cover: test
+	go tool cover -html cover.out

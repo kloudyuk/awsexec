@@ -2,112 +2,91 @@ package awsexec
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 	"sync"
-	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/kloudyuk/awsexec/internal"
 )
 
-var errorc = make(chan error)
-var errors ExecErrors
-var execFunc ExecFunc
-var execOptions *Options
-var results reflect.Value
-var resultsMutex sync.Mutex
 var wg sync.WaitGroup
+var execFn ExecFunc
 
 type Options struct {
 	ConfigPath    string
 	ProfileFilter string
+	Profiles      []string
 	RegionFilter  string
+	Regions       []string
 }
 
-type ExecFunc func(ctx context.Context, profile string, cfg aws.Config) (interface{}, error)
+// ExecFunc defines the function signature expected for the function passed to Exec()
+type ExecFunc func(ctx context.Context, profile, region string) (any, error)
 
-type ExecErrors []error
+// Exec is the main function a package consumer should call
+// 'ctx' is passed through all the go routines and eventually into fn
+// 'opt' holds options for selecting profiles & regions
+// 'fn' is the function to execute for each profile/region combination
+// 'results' is a pointer to an object to collate the results from each execution of fn
+func Exec(ctx context.Context, opt *Options, fn ExecFunc, results any) error {
 
-func (ee ExecErrors) Error() string {
-	var err string
-	for _, e := range ee {
-		err += fmt.Sprintf("%s\n", e)
-	}
-	return err
-}
+	// Store fn in a globally accesible var as it'll never change and this
+	// avoids having to pass it between the goroutines
+	execFn = fn
 
-func Exec(res interface{}, fn ExecFunc, opt *Options, svc ...internal.EC2Client) error {
-	results = reflect.ValueOf(res).Elem()
-	execFunc = fn
-	execOptions = opt
-	profiles, err := internal.GetProfiles(opt.ConfigPath, opt.ProfileFilter)
-	if err != nil {
-		return err
-	}
-	go func() {
-		for {
-			err := <-errorc
-			errors = append(errors, err)
+	// Initialise result & error structs
+	// Use reflection to gain access to the underlying results object
+	// This allows collating the results of whatever type the results arg points to
+	// so the caller doesn't have to worry about type assertions / convertions
+	res := &result{sync.Mutex{}, reflect.ValueOf(results).Elem()}
+	errs := &execErr{sync.Mutex{}, []error{}}
+
+	// If we haven't been given profiles explicitly in opt, get the profiles
+	// from the AWS Config file (usually ~/.aws/config)
+	if len(opt.Profiles) == 0 {
+		p, err := internal.GetProfiles(opt.ConfigPath, opt.ProfileFilter)
+		if err != nil {
+			return err
 		}
-	}()
-	for _, profile := range profiles {
-		wg.Add(1)
-		go execProfile(profile, svc...)
+		opt.Profiles = p
 	}
+
+	for _, profile := range opt.Profiles {
+		wg.Add(1)
+		go execProfile(ctx, opt, res, errs, profile)
+	}
+
 	wg.Wait()
-	if len(errors) == 0 {
-		return nil
+
+	if errs.Len() > 0 {
+		return errs
 	}
-	return errors
+
+	return nil
+
 }
 
-func execProfile(profile string, svc ...internal.EC2Client) {
+func execProfile(ctx context.Context, opt *Options, res *result, errs *execErr, profile string) {
 	defer wg.Done()
-	cfg, err := config.LoadDefaultConfig(context.Background(), config.WithSharedConfigProfile(profile))
-	if err != nil {
-		errorc <- fmt.Errorf("error getting config for profile %s: %w", profile, err)
-		return
+	if len(opt.Regions) == 0 {
+		r, err := internal.GetRegions(ctx, profile, opt.RegionFilter)
+		if err != nil {
+			errs.Add(err)
+			return
+		}
+		opt.Regions = r
 	}
-	cfg.Region = "us-east-1"
-	var s internal.EC2Client
-	if len(svc) > 0 {
-		s = svc[0]
-	} else {
-		s = ec2.NewFromConfig(cfg)
-	}
-	regions, err := internal.GetRegions(execOptions.RegionFilter, s)
-	if err != nil {
-		errorc <- fmt.Errorf("error getting regions for profile %s: %w", profile, err)
-		return
-	}
-	for _, region := range regions {
+	for _, region := range opt.Regions {
 		wg.Add(1)
-		cfg.Region = region
-		go execRegion(profile, cfg)
-	}
-}
-
-func execRegion(profile string, cfg aws.Config) {
-	defer wg.Done()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	r, err := execFunc(ctx, profile, cfg)
-	if err != nil {
-		errorc <- fmt.Errorf("awsexec.ExecFunc error for %s %s: %w", profile, cfg.Region, err)
-		return
-	}
-	if r == nil {
-		return
-	}
-	v := reflect.ValueOf(r)
-	resultsMutex.Lock()
-	defer resultsMutex.Unlock()
-	if v.Kind().String() == "slice" {
-		results.Set(reflect.AppendSlice(results, v))
-	} else {
-		results.Set(reflect.Append(results, v))
+		go func(region string) {
+			defer wg.Done()
+			r, err := execFn(ctx, profile, region)
+			if err != nil {
+				errs.Add(err)
+				return
+			}
+			if r != nil {
+				res.Add(r)
+			}
+		}(region)
 	}
 }
