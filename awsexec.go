@@ -2,10 +2,10 @@ package awsexec
 
 import (
 	"context"
-	"reflect"
 	"sync"
 
 	"github.com/kloudyuk/awsexec/internal"
+	"github.com/kloudyuk/awsexec/result"
 )
 
 var wg sync.WaitGroup
@@ -27,7 +27,7 @@ type ExecFunc func(ctx context.Context, profile, region string) (any, error)
 // 'opt' holds options for selecting profiles & regions
 // 'fn' is the function to execute for each profile/region combination
 // 'results' is a pointer to an object to collate the results from each execution of fn
-func Exec(ctx context.Context, opt *Options, fn ExecFunc, results any) error {
+func Exec(ctx context.Context, opt Options, fn ExecFunc, results any) error {
 
 	// Store fn in a globally accesible var as it'll never change and this
 	// avoids having to pass it between the goroutines
@@ -37,20 +37,21 @@ func Exec(ctx context.Context, opt *Options, fn ExecFunc, results any) error {
 	// Use reflection to gain access to the underlying results object
 	// This allows collating the results of whatever type the results arg points to
 	// so the caller doesn't have to worry about type assertions / convertions
-	res := &result{sync.Mutex{}, reflect.ValueOf(results).Elem()}
+	res := result.New(results)
 	errs := &execErr{sync.Mutex{}, []error{}}
 
 	// If we haven't been given profiles explicitly in opt, get the profiles
 	// from the AWS Config file (usually ~/.aws/config)
-	if len(opt.Profiles) == 0 {
+	profiles := opt.Profiles
+	if len(profiles) == 0 {
 		p, err := internal.GetProfiles(opt.ConfigPath, opt.ProfileFilter)
 		if err != nil {
 			return err
 		}
-		opt.Profiles = p
+		profiles = p
 	}
 
-	for _, profile := range opt.Profiles {
+	for _, profile := range profiles {
 		wg.Add(1)
 		go execProfile(ctx, opt, res, errs, profile)
 	}
@@ -65,17 +66,18 @@ func Exec(ctx context.Context, opt *Options, fn ExecFunc, results any) error {
 
 }
 
-func execProfile(ctx context.Context, opt *Options, res *result, errs *execErr, profile string) {
+func execProfile(ctx context.Context, opt Options, res *result.Results, errs *execErr, profile string) {
 	defer wg.Done()
-	if len(opt.Regions) == 0 {
+	regions := opt.Regions
+	if len(regions) == 0 {
 		r, err := internal.GetRegions(ctx, profile, opt.RegionFilter)
 		if err != nil {
 			errs.Add(err)
 			return
 		}
-		opt.Regions = r
+		regions = r
 	}
-	for _, region := range opt.Regions {
+	for _, region := range regions {
 		wg.Add(1)
 		go func(region string) {
 			defer wg.Done()
@@ -85,7 +87,7 @@ func execProfile(ctx context.Context, opt *Options, res *result, errs *execErr, 
 				return
 			}
 			if r != nil {
-				res.Add(r)
+				res.Add(profile, region, r)
 			}
 		}(region)
 	}

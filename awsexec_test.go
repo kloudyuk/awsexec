@@ -16,14 +16,14 @@ type testResult struct {
 func TestExec(t *testing.T) {
 	tests := []struct {
 		name     string
-		opt      *Options
+		opt      Options
 		fn       ExecFunc
-		expected []testResult
+		expected map[string]map[string]testResult
 		err      bool
 	}{
 		{
 			name: "test",
-			opt: &Options{
+			opt: Options{
 				Profiles: []string{"one", "two", "three"},
 				Regions:  []string{"a", "b", "c", "d"},
 			},
@@ -31,39 +31,76 @@ func TestExec(t *testing.T) {
 			err: false,
 		},
 		{
-			name: "test_slice",
-			opt: &Options{
-				Profiles: []string{"one", "three"},
-				Regions:  []string{"d"},
+			name: "test_error",
+			opt: Options{
+				Profiles: []string{"one", "two", "three", "four"},
+				Regions:  []string{"a", "b", "c", "d"},
+			},
+			expected: nil,
+			fn:       testErr,
+			err:      true,
+		},
+	}
+	for _, tt := range tests {
+		if tt.expected == nil && !tt.err {
+			tt.expected = expectedResults(t, tt.opt.Profiles, tt.opt.Regions)
+		}
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			results := map[string]map[string]testResult{}
+			err := Exec(context.Background(), tt.opt, tt.fn, &results)
+			if tt.err {
+				assert.ErrorContains(err, "test error")
+			} else {
+				assert.NoError(err)
+				assert.Equal(tt.expected, results)
+			}
+		})
+	}
+}
+
+func TestExecSlice(t *testing.T) {
+	tests := []struct {
+		name     string
+		opt      Options
+		fn       ExecFunc
+		expected map[string]map[string][]testResult
+		err      bool
+	}{
+		{
+			name: "test",
+			opt: Options{
+				Profiles: []string{"one", "two", "three"},
+				Regions:  []string{"a", "b", "c", "d"},
 			},
 			fn:  testSlice,
 			err: false,
 		},
 		{
 			name: "test_error",
-			opt: &Options{
+			opt: Options{
 				Profiles: []string{"one", "two", "three", "four"},
 				Regions:  []string{"a", "b", "c", "d"},
 			},
-			expected: []testResult{},
+			expected: nil,
 			fn:       testErr,
 			err:      true,
 		},
 	}
 	for _, tt := range tests {
-		if tt.expected == nil {
-			tt.expected = expectedResults(t, tt.opt.Profiles, tt.opt.Regions)
+		if tt.expected == nil && !tt.err {
+			tt.expected = expectedResultsSlice(t, tt.opt.Profiles, tt.opt.Regions)
 		}
 		t.Run(tt.name, func(t *testing.T) {
 			assert := assert.New(t)
-			results := []testResult{}
+			results := map[string]map[string][]testResult{}
 			err := Exec(context.Background(), tt.opt, tt.fn, &results)
 			if tt.err {
 				assert.ErrorContains(err, "test error")
 			} else {
 				assert.NoError(err)
+				assert.Equal(tt.expected, results)
 			}
-			assert.ElementsMatch(tt.expected, results)
 		})
 	}
 }
@@ -80,12 +117,25 @@ func testErr(ctx context.Context, profile, region string) (any, error) {
 	return nil, fmt.Errorf("test error")
 }
 
-func expectedResults(t *testing.T, profiles, regions []string) []testResult {
+func expectedResults(t *testing.T, profiles, regions []string) map[string]map[string]testResult {
 	t.Helper()
-	out := []testResult{}
+	out := map[string]map[string]testResult{}
 	for _, profile := range profiles {
+		out[profile] = map[string]testResult{}
 		for _, region := range regions {
-			out = append(out, testResult{profile, region})
+			out[profile][region] = testResult{profile, region}
+		}
+	}
+	return out
+}
+
+func expectedResultsSlice(t *testing.T, profiles, regions []string) map[string]map[string][]testResult {
+	t.Helper()
+	out := map[string]map[string][]testResult{}
+	for _, profile := range profiles {
+		out[profile] = map[string][]testResult{}
+		for _, region := range regions {
+			out[profile][region] = []testResult{{profile, region}}
 		}
 	}
 	return out

@@ -2,27 +2,10 @@ package awsexec
 
 import (
 	"fmt"
-	"reflect"
 	"sync"
 )
 
-type result struct {
-	m       sync.Mutex
-	results reflect.Value
-}
-
-func (r *result) Add(v interface{}) {
-	result := reflect.ValueOf(v)
-	r.m.Lock()
-	if result.Kind().String() == "slice" {
-		r.results.Set(reflect.AppendSlice(r.results, result))
-	} else {
-		r.results.Set(reflect.Append(r.results, result))
-	}
-	r.m.Unlock()
-}
-
-// errs is a custom error type that holds a slice of errors and
+// execErr is a custom error type that holds a slice of errors and
 // can be returned as a single error as it implements the error interface
 type execErr struct {
 	m       sync.Mutex
