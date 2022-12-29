@@ -1,3 +1,8 @@
+// awsexec can be used to execute a given function for any
+// combination of AWS profiles & regions.
+//
+// The provided function is executed for each profile/region combination
+// concurrently using goroutines.
 package awsexec
 
 import (
