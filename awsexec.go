@@ -10,7 +10,6 @@ import (
 	"sync"
 
 	"github.com/kloudyuk/awsexec/internal"
-	"github.com/kloudyuk/awsexec/result"
 )
 
 var wg sync.WaitGroup
@@ -42,7 +41,7 @@ func Exec(ctx context.Context, opt Options, fn ExecFunc, results any) error {
 	// Use reflection to gain access to the underlying results object
 	// This allows collating the results of whatever type the results arg points to
 	// so the caller doesn't have to worry about type assertions / convertions
-	res := result.New(results)
+	res := NewResult(results)
 	errs := &execErr{sync.Mutex{}, []error{}}
 
 	// If we haven't been given profiles explicitly in opt, get the profiles
@@ -71,7 +70,7 @@ func Exec(ctx context.Context, opt Options, fn ExecFunc, results any) error {
 
 }
 
-func execProfile(ctx context.Context, opt Options, res *result.Results, errs *execErr, profile string) {
+func execProfile(ctx context.Context, opt Options, res *Results, errs *execErr, profile string) {
 	defer wg.Done()
 	regions := opt.Regions
 	if len(regions) == 0 {

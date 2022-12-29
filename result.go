@@ -1,4 +1,4 @@
-package result
+package awsexec
 
 import (
 	"reflect"
@@ -6,20 +6,20 @@ import (
 )
 
 type Results struct {
-	m sync.Mutex
+	sync.Mutex
 	t reflect.Type
 	v reflect.Value
 }
 
-func New(v any) *Results {
+func NewResult(v any) *Results {
 	val := reflect.ValueOf(v).Elem()
 	t := val.Type().Elem()
 	return &Results{sync.Mutex{}, t, val}
 }
 
 func (r *Results) Add(profile, region string, v any) {
-	r.m.Lock()
-	defer r.m.Unlock()
+	r.Lock()
+	defer r.Unlock()
 	key := reflect.ValueOf(profile)
 	val := r.v.MapIndex(key)
 	if !val.IsValid() {

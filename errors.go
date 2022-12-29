@@ -8,7 +8,7 @@ import (
 // execErr is a custom error type that holds a slice of errors and
 // can be returned as a single error as it implements the error interface
 type execErr struct {
-	m       sync.Mutex
+	sync.Mutex
 	errList []error
 }
 
@@ -21,9 +21,9 @@ func (e *execErr) Error() string {
 }
 
 func (e *execErr) Add(err error) {
-	e.m.Lock()
+	e.Lock()
 	e.errList = append(e.errList, err)
-	e.m.Unlock()
+	e.Unlock()
 }
 
 func (e *execErr) Len() int {
