@@ -16,14 +16,14 @@ type testResult struct {
 func TestExec(t *testing.T) {
 	tests := []struct {
 		name     string
-		opt      Options
+		opt      *Options
 		fn       ExecFunc
 		expected map[string]map[string]testResult
 		err      bool
 	}{
 		{
 			name: "test",
-			opt: Options{
+			opt: &Options{
 				Profiles: []string{"one", "two", "three"},
 				Regions:  []string{"a", "b", "c", "d"},
 			},
@@ -32,7 +32,7 @@ func TestExec(t *testing.T) {
 		},
 		{
 			name: "test_error",
-			opt: Options{
+			opt: &Options{
 				Profiles: []string{"one", "two", "three", "four"},
 				Regions:  []string{"a", "b", "c", "d"},
 			},
@@ -62,14 +62,14 @@ func TestExec(t *testing.T) {
 func TestExecSlice(t *testing.T) {
 	tests := []struct {
 		name     string
-		opt      Options
+		opt      *Options
 		fn       ExecFunc
 		expected map[string]map[string][]testResult
 		err      bool
 	}{
 		{
 			name: "test",
-			opt: Options{
+			opt: &Options{
 				Profiles: []string{"one", "two", "three"},
 				Regions:  []string{"a", "b", "c", "d"},
 			},
@@ -78,7 +78,7 @@ func TestExecSlice(t *testing.T) {
 		},
 		{
 			name: "test_error",
-			opt: Options{
+			opt: &Options{
 				Profiles: []string{"one", "two", "three", "four"},
 				Regions:  []string{"a", "b", "c", "d"},
 			},

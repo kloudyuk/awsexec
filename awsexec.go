@@ -31,7 +31,7 @@ type ExecFunc func(ctx context.Context, profile, region string) (any, error)
 // 'opt' holds options for selecting profiles & regions
 // 'fn' is the function to execute for each profile/region combination
 // 'results' is a pointer to an object to collate the results from each execution of fn
-func Exec(ctx context.Context, opt Options, fn ExecFunc, results any) error {
+func Exec(ctx context.Context, opt *Options, fn ExecFunc, results any) error {
 
 	// Store fn in a globally accesible var as it'll never change and this
 	// avoids having to pass it between the goroutines
@@ -70,7 +70,7 @@ func Exec(ctx context.Context, opt Options, fn ExecFunc, results any) error {
 
 }
 
-func execProfile(ctx context.Context, opt Options, res *Results, errs *execErr, profile string) {
+func execProfile(ctx context.Context, opt *Options, res *Results, errs *execErr, profile string) {
 	defer wg.Done()
 	regions := opt.Regions
 	if len(regions) == 0 {
